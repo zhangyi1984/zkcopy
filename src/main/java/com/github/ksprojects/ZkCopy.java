@@ -10,6 +10,8 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.commons.configuration2.BaseConfiguration;
+import org.apache.commons.configuration2.Configuration;
 import org.apache.log4j.Logger;
 
 public class ZkCopy {
@@ -29,26 +31,24 @@ public class ZkCopy {
      * Main entry point - start ZkCopy.
      */
     public static void main(String[] args) {
-        Configuration cfg = parseLegacyConfiguration();
-        if (cfg == null) {
-            cfg = parseConfiguration(args);
-        }
+        Configuration cfg = parseConfiguration(args);
         if (cfg == null) {
             Options options = createOptions();
             printHelp(options);
             return;
         }
-        String sourceAddress = cfg.source();
-        String destinationAddress = cfg.target();
-        int threads = cfg.workers();
-        boolean removeDeprecatedNodes = !cfg.copyOnly();
+        String sourceAddress = cfg.getString(SOURCE);
+        String destinationAddress = cfg.getString(TARGET);
+        int threads = cfg.getInt(WORKERS);
+        boolean removeDeprecatedNodes = !cfg.getBoolean(COPY_ONLY);
         LOGGER.info("using " + threads + " concurrent workers to copy data");
-        LOGGER.info("delete nodes = " + String.valueOf(removeDeprecatedNodes));
-        LOGGER.info("ignore ephemeral nodes = " + String.valueOf(cfg.ignoreEphemeralNodes()));
+        LOGGER.info("delete nodes = " + removeDeprecatedNodes);
+        LOGGER.info("ignore ephemeral nodes = " + cfg.getBoolean(IGNORE_EPHEMERAL_NODES));
         Reader reader = new Reader(sourceAddress, threads);
         Node root = reader.read();
         if (root != null) {
-            Writer writer = new Writer(destinationAddress, root, removeDeprecatedNodes, cfg.ignoreEphemeralNodes());
+            Writer writer = new Writer(destinationAddress, root, removeDeprecatedNodes,
+                    cfg.getBoolean(IGNORE_EPHEMERAL_NODES));
             writer.write();
         } else {
             LOGGER.error("FAILED");
@@ -72,18 +72,15 @@ public class ZkCopy {
             if (!line.hasOption(SOURCE) || !line.hasOption(TARGET)) {
                 return null;
             }
-            String sourceValue = getString(line, SOURCE);
-            String targetValue = getString(line, TARGET);
-            int workersValue = getInteger(line, WORKERS, DEFAULT_THREADS_NUMBER);
-            boolean copyOnlyValue = getBoolean(line, COPY_ONLY, !DEFAULT_REMOVE_DEPRECATED_NODES);
-            boolean ignoreEphemeralNodes = getBoolean(line, IGNORE_EPHEMERAL_NODES, DEFAULT_IGNORE_EPHEMERAL_NODES);
-            return ImmutableConfiguration.builder()
-                    .source(sourceValue)
-                    .target(targetValue)
-                    .workers(workersValue)
-                    .copyOnly(copyOnlyValue)
-                    .ignoreEphemeralNodes(ignoreEphemeralNodes)
-                    .build();
+            Configuration configuration = new BaseConfiguration();
+            configuration.addProperty(SOURCE, getString(line, SOURCE));
+            configuration.addProperty(TARGET, getString(line, TARGET));
+            configuration.addProperty(WORKERS, getInteger(line, WORKERS, DEFAULT_THREADS_NUMBER));
+            configuration.addProperty(COPY_ONLY,
+                    getBoolean(line, COPY_ONLY, DEFAULT_REMOVE_DEPRECATED_NODES));
+            configuration.addProperty(IGNORE_EPHEMERAL_NODES,
+                    getBoolean(line, IGNORE_EPHEMERAL_NODES, DEFAULT_IGNORE_EPHEMERAL_NODES));
+            return configuration;
         } catch (ParseException exp) {
             LOGGER.error("Could not parse options.  Reason: " + exp.getMessage());
             return null;
@@ -93,40 +90,20 @@ public class ZkCopy {
     private static Options createOptions() {
         Options options = new Options();
 
-        Option help = Option.builder("h")
-                .longOpt(HELP)
-                .desc("print this message")
-                .build();
-        Option source = Option.builder("s")
-                .longOpt(SOURCE)
-                .hasArg()
-                .argName("server:port/path")
-                .desc("location of a source tree to copy")
-                .build();
-        Option target = Option.builder("t")
-                .longOpt(TARGET)
-                .hasArg()
-                .argName("server:port/path")
-                .desc("target location")
-                .build();
-        Option workers = Option.builder("w")
-                .longOpt(WORKERS)
-                .hasArg()
-                .argName("N")
-                .desc("(optional) number of concurrent workers to copy data")
-                .build();
-        Option copyOnly = Option.builder("c")
-                .longOpt(COPY_ONLY)
-                .hasArg()
-                .argName("true|false")
+        Option help = Option.builder("h").longOpt(HELP).desc("print this message").build();
+        Option source = Option.builder("s").longOpt(SOURCE).hasArg().argName("server:port/path")
+                .desc("location of a source tree to copy").build();
+        Option target = Option.builder("t").longOpt(TARGET).hasArg().argName("server:port/path")
+                .desc("target location").build();
+        Option workers = Option.builder("w").longOpt(WORKERS).hasArg().argName("N")
+                .desc("(optional) number of concurrent workers to copy data").build();
+        Option copyOnly = Option.builder("c").longOpt(COPY_ONLY).hasArg().argName("true|false")
                 .desc("(optional) set this flag if you do not want to remove nodes that are removed on source")
                 .build();
-        Option ignoreEphemeralNodes = Option.builder("i")
-                .longOpt(IGNORE_EPHEMERAL_NODES)
-                .hasArg()
-                .argName("true|false")
-                .desc("(optional) set this flag if you do not want to copy ephemeral ZNodes")
-                .build();
+        Option ignoreEphemeralNodes =
+                Option.builder("i").longOpt(IGNORE_EPHEMERAL_NODES).hasArg().argName("true|false")
+                        .desc("(optional) set this flag if you do not want to copy ephemeral ZNodes")
+                        .build();
 
         options.addOption(help);
         options.addOption(source);
@@ -165,58 +142,6 @@ public class ZkCopy {
             LOGGER.warn("Could not parse option " + name + ": " + e.getMessage());
             return defaultValue;
         }
-    }
-
-    private static Configuration parseLegacyConfiguration() {
-        String sourceAddress = getSource();
-        String destinationAddress = getDestination();
-        if (sourceAddress == null || destinationAddress == null) {
-            return null;
-        }
-        int threads = getThreadsNumber();
-        boolean removeDeprecatedNodes = getRemoveDeprecatedNodes();
-        return ImmutableConfiguration.builder()
-                .source(sourceAddress)
-                .target(destinationAddress)
-                .workers(threads)
-                .copyOnly(!removeDeprecatedNodes)
-                .build();
-    }
-
-    private static String getDestination() {
-        return System.getProperty("destination");
-    }
-
-    private static String getSource() {
-        return System.getProperty("source");
-    }
-
-    private static int getThreadsNumber() {
-        String threads = System.getProperty("threads");
-        int n = DEFAULT_THREADS_NUMBER;
-        if (threads == null) {
-            return DEFAULT_THREADS_NUMBER;
-        }
-        try {
-            n = Integer.valueOf(threads);
-        } catch (NumberFormatException e) {
-            LOGGER.error("Can't parse threads number - \"" + threads + "\"", e);
-        }
-        return n;
-    }
-
-    private static boolean getRemoveDeprecatedNodes() {
-        String s = System.getProperty("removeDeprecatedNodes");
-        boolean ans = DEFAULT_REMOVE_DEPRECATED_NODES;
-        if (s == null) {
-            return DEFAULT_REMOVE_DEPRECATED_NODES;
-        }
-        try {
-            ans = Boolean.valueOf(s);
-        } catch (NumberFormatException e) {
-            LOGGER.error("Can't parse 'removeDeprecatedNodes' - \"" + s + "\"", e);
-        }
-        return ans;
     }
 
 }
