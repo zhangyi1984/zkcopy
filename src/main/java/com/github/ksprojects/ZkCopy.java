@@ -18,7 +18,7 @@ public class ZkCopy {
 
     private static final Logger LOGGER = Logger.getLogger(ZkCopy.class);
     private static final int DEFAULT_THREADS_NUMBER = 10;
-    private static final boolean DEFAULT_REMOVE_DEPRECATED_NODES = true;
+    private static final boolean DEFAULT_REMOVE_DEPRECATED_NODES = false;
     private static final boolean DEFAULT_IGNORE_EPHEMERAL_NODES = true;
     private static final String HELP = "help";
     private static final String SOURCE = "source";
@@ -40,7 +40,7 @@ public class ZkCopy {
         String sourceAddress = cfg.getString(SOURCE);
         String destinationAddress = cfg.getString(TARGET);
         int threads = cfg.getInt(WORKERS);
-        boolean removeDeprecatedNodes = !cfg.getBoolean(COPY_ONLY);
+        boolean removeDeprecatedNodes = cfg.getBoolean(COPY_ONLY);
         LOGGER.info("using " + threads + " concurrent workers to copy data");
         LOGGER.info("delete nodes = " + removeDeprecatedNodes);
         LOGGER.info("ignore ephemeral nodes = " + cfg.getBoolean(IGNORE_EPHEMERAL_NODES));
